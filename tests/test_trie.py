@@ -31,6 +31,21 @@ def test_trie():
     with pytest.raises(KeyError):
         x = trie['bar']
 
+def test_trie_invalid_alphabet():
+    t = datrie.Trie('abc')
+    t['a'] = 'a'
+    t['b'] = 'b'
+    t['c'] = 'c'
+
+    for k in 'abc':
+        assert t[k] == k
+
+    with pytest.raises(KeyError):
+        t['d']
+
+    with pytest.raises(KeyError):
+        t['e']
+
 def test_trie_save_load():
     fd, fname = tempfile.mkstemp()
     trie = datrie.Trie(string.printable)
@@ -200,6 +215,12 @@ class TestPrefixSearch(object):
         no_prefixes = trie.iter_prefixes('vasia')
         assert list(no_prefixes) == []
 
+        values = trie.iter_prefix_values('producers')
+        assert list(values) == ['foo', 8, 9, 1]
+
+        no_prefixes = trie.iter_prefix_values('vasia')
+        assert list(no_prefixes) == []
+
         items = trie.iter_prefix_items('producers')
         assert next(items) == ('pr', 'foo')
         assert next(items) == ('produce', 8)
@@ -215,10 +236,14 @@ class TestPrefixSearch(object):
         prefixes = trie.prefixes('producers')
         assert prefixes == ['pr', 'produce', 'producer', 'producers']
 
+        values = trie.prefix_values('producers')
+        assert values == [3, 8, 9, 1]
+
         items = trie.prefix_items('producers')
         assert items == [('pr', 3), ('produce', 8), ('producer', 9), ('producers', 1)]
 
         assert trie.prefixes('vasia') == []
+        assert trie.prefix_values('vasia') == []
         assert trie.prefix_items('vasia') == []
 
 
@@ -256,6 +281,12 @@ class TestPrefixSearch(object):
         with pytest.raises(KeyError):
             trie.longest_prefix('z')
 
+    def test_longest_prefix_bug(self):
+        trie = self._trie()
+        assert trie.longest_prefix("print") == "pr"
+        assert trie.longest_prefix_value("print") == 3
+        assert trie.longest_prefix_item("print") == ("pr", 3)
+
     def test_longest_prefix_item(self):
         trie = self._trie()
 
@@ -272,6 +303,23 @@ class TestPrefixSearch(object):
 
         with pytest.raises(KeyError):
             trie.longest_prefix_item('z')
+
+    def test_longest_prefix_value(self):
+        trie = self._trie()
+
+        for index, word in enumerate(self.WORDS, 1):
+            assert trie.longest_prefix_value(word) == index
+
+        assert trie.longest_prefix_value('pooler') == 4
+        assert trie.longest_prefix_value('producers') == 1
+        assert trie.longest_prefix_value('progressor') == 10
+
+        assert trie.longest_prefix_value('paol', default=None) == None
+        assert trie.longest_prefix_value('p', default=None) == None
+        assert trie.longest_prefix_value('z', default=None) == None
+
+        with pytest.raises(KeyError):
+            trie.longest_prefix_value('z')
 
 
 

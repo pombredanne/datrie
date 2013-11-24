@@ -2,6 +2,38 @@
 CHANGES
 =======
 
+0.6.1 (2013-09-21)
+------------------
+
+* fixed build for Visual Studio (thanks Gabi Davar).
+
+0.6 (2013-07-09)
+----------------
+
+* datrie is rebuilt with Cython 0.19.1;
+* ``iter_prefix_values``, ``prefix_values`` and ``longest_prefix_value``
+  methods for ``datrie.BaseTrie`` and ``datrie.Trie`` (thanks Jared Suttles).
+
+0.5.1 (2013-01-30)
+------------------
+
+* Recently introduced memory leak in ``longest_prefix``
+  and ``longest_prefix_item`` is fixed.
+
+0.5 (2013-01-29)
+----------------
+
+* ``longest_prefix`` and ``longest_prefix_item`` methods are fixed;
+* datrie is rebuilt with Cython 0.18;
+* misleading benchmark results in README are fixed;
+* State._walk is renamed to State.walk_char.
+
+0.4.2 (2012-09-02)
+------------------
+
+* Update to latest libdatrie; this makes ``.keys()`` method a bit slower but
+  removes a keys length limitation.
+
 0.4.1 (2012-07-29)
 ------------------
 

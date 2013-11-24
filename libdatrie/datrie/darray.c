@@ -39,19 +39,11 @@
  *    INTERNAL TYPES DECLARATIONS   *
  *----------------------------------*/
 
-typedef struct _Symbols Symbols;
-
 struct _Symbols {
     short       num_symbols;
     TrieChar    symbols[256];
 };
 
-static Symbols *    symbols_new ();
-static void         symbols_free (Symbols *syms);
-static void         symbols_add (Symbols *syms, TrieChar c);
-
-#define symbols_num(s)          ((s)->num_symbols)
-#define symbols_get(s,i)        ((s)->symbols[i])
 #define symbols_add_fast(s,c)   ((s)->symbols[(s)->num_symbols++] = c)
 
 /*-----------------------------------*
@@ -63,14 +55,8 @@ static void         symbols_add (Symbols *syms, TrieChar c);
 static Bool         da_check_free_cell (DArray         *d,
                                         TrieIndex       s);
 
-static Bool         da_has_children    (DArray         *d,
+static Bool         da_has_children    (const DArray   *d,
                                         TrieIndex       s);
-
-static Symbols *    da_output_symbols  (const DArray   *d,
-                                        TrieIndex       s);
-
-static TrieChar *   da_get_state_key   (const DArray   *d,
-                                        TrieIndex       state);
 
 static TrieIndex    da_find_free_base  (DArray         *d,
                                         const Symbols  *symbols);
@@ -92,23 +78,13 @@ static void         da_alloc_cell      (DArray         *d,
 static void         da_free_cell       (DArray         *d,
                                         TrieIndex       cell);
 
-static Bool         da_enumerate_recursive (const DArray   *d,
-                                            TrieIndex       state,
-                                            DAEnumFunc      enum_func,
-                                            void           *user_data);
-
-static Bool         da_walk_next_recursive (const DArray *d,
-                                            TrieIndex *s,
-                                            TrieChar start_c);
-
-
 /* ==================== BEGIN IMPLEMENTATION PART ====================  */
 
 /*------------------------------------*
  *   INTERNAL TYPES IMPLEMENTATIONS   *
  *------------------------------------*/
 
-static Symbols *
+Symbols *
 symbols_new ()
 {
     Symbols *syms;
@@ -123,13 +99,13 @@ symbols_new ()
     return syms;
 }
 
-static void
+void
 symbols_free (Symbols *syms)
 {
     free (syms);
 }
 
-static void
+void
 symbols_add (Symbols *syms, TrieChar c)
 {
     short lower, upper;
@@ -154,6 +130,19 @@ symbols_add (Symbols *syms, TrieChar c)
     syms->symbols[lower] = c;
     syms->num_symbols++;
 }
+
+int
+symbols_num (const Symbols *syms)
+{
+    return syms->num_symbols;
+}
+
+TrieChar
+symbols_get (const Symbols *syms, int index)
+{
+    return syms->symbols[index];
+}
+
 
 /*------------------------------*
  *    PRIVATE DATA DEFINITONS   *
@@ -424,123 +413,6 @@ da_walk (const DArray *d, TrieIndex *s, TrieChar c)
     return FALSE;
 }
 
-
-static TrieIndex
-da_down_state_after (const DArray* d, TrieIndex s, TrieChar start_c)
-{
-
-    TrieIndex base = da_get_base (d, s);
-    TrieIndex next, c;
-
-    if (TRIE_INDEX_ERROR == base || base < 0) {
-        return TRIE_INDEX_ERROR;
-    }
-
-    TrieIndex max_c = MIN_VAL (TRIE_CHAR_MAX, TRIE_INDEX_MAX - base);
-
-    for (c = start_c + 1; c < max_c; c++) {
-        next = base + c;
-        if (da_get_check (d, next) == s) {
-            return next;
-        }
-    }
-
-    return TRIE_INDEX_ERROR;
-}
-
-static TrieChar
-da_transition_char (const DArray* d, TrieIndex parent, TrieIndex child)
-{
-    int res = child - da_get_base (d, parent);
-    return res;
-//    if (res > 0)
-//        return res;
-//    printf("ERROR");
-//    return 0;
-}
-
-/**
- * @brief Walk in double-array structure (using preorder traversal).
- *
- * @param d    : the double-array structure
- * @param root : state at which iteration should stop
- * @param s    : current state
- *
- * @return boolean indicating success
- *
- */
-Bool
-da_walk_next (const DArray* d, TrieIndex root, TrieIndex *s)
-{
-//    printf("da_walk_next (state=%d)\n", *s);
-
-    TrieIndex   next, parent, current;
-    TrieChar    c, current_c;
-
-    /* try to go down */
-    next = da_down_state_after(d, *s, 0);
-    if (next != TRIE_INDEX_ERROR) {  /* there is a child; go to it */
-
-//        c = da_transition_char(d, *s, next);
-//        printf("DOWN %d -> (%c) -> %d\n", *s, c-1, next);
-
-        *s = next;
-        return TRUE;
-    }
-
-    /* can't go down; go up & right */
-    current = *s;
-    while (current != root) {
-
-        parent = da_get_check(d, current);
-        current_c = da_transition_char(d, parent, current);
-
-        next = da_down_state_after(d, parent, current_c);
-        if (next != TRIE_INDEX_ERROR) { /* up & right & down */
-
-//            c = da_transition_char(d, parent, next);
-//            printf("UP-RIGHT-DOWN %d -> (%c) -> %d -> (%c) -> %d\n", *s, current_c-1, parent, c-1, next);
-
-            *s = next;
-            return TRUE;
-        }
-
-        /* there is no right items in parent node; move up */
-//        printf("TMP UP %d -> (%c) -> %d\n", current, current_c-1, parent);
-        current = parent;
-    }
-
-//    printf("ROOT\n");
-    return FALSE;
-}
-
-/**
- * @brief Walk in double-array structure (using preorder traversal).
- *
- * @param d : the double-array structure
- * @param root : state at which iteration should stop
- * @param s : current state
- *
- * @return boolean indicating success
- *
- */
-Bool
-da_walk_next_terminal (const DArray* d, TrieIndex root, TrieIndex *s)
-{
-//    printf("da_walk_next_terminal (root=%d, state=%d)\n", root, *s);
-    Bool res;
-
-    do {
-        res = da_walk_next (d, root, s);
-        if (!res) {
-            return FALSE;
-        }
-    } while (da_get_base(d, *s) >= 0 && !da_is_walkable (d, *s, 0));
-
-    return TRUE;
-}
-
-
 /**
  * @brief Insert a branch from trie node
  *
@@ -616,7 +488,7 @@ da_check_free_cell (DArray         *d,
 }
 
 static Bool
-da_has_children    (DArray         *d,
+da_has_children    (const DArray   *d,
                     TrieIndex       s)
 {
     TrieIndex   base;
@@ -626,7 +498,7 @@ da_has_children    (DArray         *d,
     if (TRIE_INDEX_ERROR == base || base < 0)
         return FALSE;
 
-    max_c = MIN_VAL (TRIE_CHAR_MAX, TRIE_INDEX_MAX - base);
+    max_c = MIN_VAL (TRIE_CHAR_MAX, d->num_cells - base);
     for (c = 0; c < max_c; c++) {
         if (da_get_check (d, base + c) == s)
             return TRUE;
@@ -635,7 +507,7 @@ da_has_children    (DArray         *d,
     return FALSE;
 }
 
-static Symbols *
+Symbols *
 da_output_symbols  (const DArray   *d,
                     TrieIndex       s)
 {
@@ -646,51 +518,13 @@ da_output_symbols  (const DArray   *d,
     syms = symbols_new ();
 
     base = da_get_base (d, s);
-    max_c = MIN_VAL (TRIE_CHAR_MAX, TRIE_INDEX_MAX - base);
+    max_c = MIN_VAL (TRIE_CHAR_MAX, d->num_cells - base);
     for (c = 0; c < max_c; c++) {
         if (da_get_check (d, base + c) == s)
             symbols_add_fast (syms, (TrieChar) c);
     }
 
     return syms;
-}
-
-static TrieChar *
-da_get_state_key   (const DArray   *d,
-                    TrieIndex       state)
-{
-    TrieChar   *key;
-    int         key_size, key_length;
-    int         i;
-
-    key_size = 20;
-    key_length = 0;
-    key = (TrieChar *) malloc (key_size);
-
-    /* trace back to root */
-    while (da_get_root (d) != state) {
-        TrieIndex   parent;
-
-        if (key_length + 1 >= key_size) {
-            key_size += 20;
-            key = (TrieChar *) realloc (key, key_size);
-        }
-        parent = da_get_check (d, state);
-        key[key_length++] = (TrieChar) (state - da_get_base (d, parent));
-        state = parent;
-    }
-    key[key_length] = '\0';
-
-    /* reverse the string */
-    for (i = 0; i < --key_length; i++) {
-        TrieChar temp;
-
-        temp = key[i];
-        key[i] = key[key_length];
-        key[key_length] = temp;
-    }
-
-    return key;
 }
 
 static TrieIndex
@@ -782,7 +616,7 @@ da_relocate_base   (DArray         *d,
         if (old_next_base > 0) {
             TrieIndex   c, max_c;
 
-            max_c = MIN_VAL (TRIE_CHAR_MAX, TRIE_INDEX_MAX - old_next_base);
+            max_c = MIN_VAL (TRIE_CHAR_MAX, d->num_cells - old_next_base);
             for  (c = 0; c < max_c; c++) {
                 if (da_get_check (d, old_next_base + c) == old_next)
                     da_set_check (d, old_next_base + c, new_next);
@@ -910,57 +744,95 @@ da_free_cell       (DArray         *d,
 }
 
 /**
- * @brief Enumerate entries stored in double-array structure
+ * @brief Find first separate node in a sub-trie
  *
- * @param d          : the double-array structure
- * @param enum_func  : the callback function to be called on each separate node
- * @param user_data  : user-supplied data to send as an argument to @a enum_func
+ * @param d       : the double-array structure
+ * @param root    : the sub-trie root to search from
+ * @param keybuff : the TrieString buffer for incrementally calcuating key
  *
- * @return boolean value indicating whether all the keys are visited
+ * @return index to the first separate node; TRIE_INDEX_ERROR on any failure
  *
- * Enumerate all keys stored in double-array structure. For each entry, the
- * user-supplied @a enum_func callback function is called, with the entry key,
- * the separate node, and user-supplied data. Returning FALSE from such
- * callback will stop enumeration and return FALSE.
+ * Find the first separate node under a sub-trie rooted at @a root.
+ *
+ * On return, @a keybuff is appended with the key characters which walk from
+ * @a root to the separate node. This is for incrementally calculating the
+ * transition key, which is more efficient than later totally reconstructing
+ * key from the given separate node.
+ *
+ * Available since: 0.2.6
  */
-Bool
-da_enumerate (const DArray *d, DAEnumFunc enum_func, void *user_data)
+TrieIndex
+da_first_separate (DArray *d, TrieIndex root, TrieString *keybuff)
 {
-    return da_enumerate_recursive (d, da_get_root (d), enum_func, user_data);
-}
+    TrieIndex base;
+    TrieChar  c, max_c;
 
-static Bool
-da_enumerate_recursive (const DArray   *d,
-                        TrieIndex       state,
-                        DAEnumFunc      enum_func,
-                        void           *user_data)
-{
-    Bool        ret;
-    TrieIndex   base;
-
-    base = da_get_base (d, state);
-
-    if (base < 0) {
-        TrieChar   *key;
-
-        key = da_get_state_key (d, state);
-        ret = (*enum_func) (key, state, user_data);
-        free (key);
-    } else {
-        Symbols *symbols;
-        int      i;
-
-        ret = TRUE;
-        symbols = da_output_symbols (d, state);
-        for (i = 0; ret && i < symbols_num (symbols); i++) {
-            ret = da_enumerate_recursive (d, base + symbols_get (symbols, i),
-                                          enum_func, user_data);
+    while ((base = da_get_base (d, root)) >= 0) {
+        max_c = MIN_VAL (TRIE_CHAR_MAX, d->num_cells - base);
+        for (c = 0; c < max_c; c++) {
+            if (da_get_check (d, base + c) == root)
+                break;
         }
 
-        symbols_free (symbols);
+        if (c == max_c)
+            return TRIE_INDEX_ERROR;
+
+        trie_string_append_char (keybuff, c);
+        root = base + c;
     }
 
-    return ret;
+    return root;
+}
+
+/**
+ * @brief Find next separate node in a sub-trie
+ *
+ * @param d     : the double-array structure
+ * @param root  : the sub-trie root to search from
+ * @param sep   : the current separate node
+ * @param keybuff : the TrieString buffer for incrementally calcuating key
+ *
+ * @return index to the next separate node; TRIE_INDEX_ERROR if no more
+ *         separate node is found
+ *
+ * Find the next separate node under a sub-trie rooted at @a root starting
+ * from the current separate node @a sep.
+ *
+ * On return, @a keybuff is incrementally updated from the key which walks
+ * to previous separate node to the one which walks to the new separate node.
+ * So, it is assumed to be initialized by at least one da_first_separate()
+ * call before. This incremental key calculation is more efficient than later
+ * totally reconstructing key from the given separate node.
+ *
+ * Available since: 0.2.6
+ */
+TrieIndex
+da_next_separate (DArray *d, TrieIndex root, TrieIndex sep, TrieString *keybuff)
+{
+    TrieIndex parent;
+    TrieIndex base;
+    TrieChar  c, max_c;
+
+    while (sep != root) {
+        parent = da_get_check (d, sep);
+        base = da_get_base (d, parent);
+        c = sep - base;
+
+        trie_string_cut_last (keybuff);
+
+        /* find next sibling of sep */
+        max_c = MIN_VAL (TRIE_CHAR_MAX, d->num_cells - base);
+        while (++c < max_c) {
+            if (da_get_check (d, base + c) == parent) {
+                trie_string_append_char (keybuff, c);
+                return da_first_separate (d, base + c, keybuff);
+            }
+        }
+
+        sep = parent;
+    }
+
+    return TRIE_INDEX_ERROR;
 }
 
 /*

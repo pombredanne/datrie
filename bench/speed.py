@@ -51,6 +51,8 @@ def _alphabet(words):
             chars.add(ch)
     return "".join(sorted(list(chars)))
 
+ALPHABET = _alphabet(WORDS100k)
+
 def bench(name, timer, descr='M ops/sec', op_count=0.1, repeats=3, runs=5):
     times = []
     for x in range(runs):
@@ -59,7 +61,7 @@ def bench(name, timer, descr='M ops/sec', op_count=0.1, repeats=3, runs=5):
     def op_time(time):
         return op_count*repeats / time
 
-    print("%55s:\t%0.3f%s" % (
+    print("%55s:    %0.3f%s" % (
         name,
         op_time(min(times)),
         descr,
@@ -67,12 +69,7 @@ def bench(name, timer, descr='M ops/sec', op_count=0.1, repeats=3, runs=5):
 
 def create_trie():
     words = words100k()
-    trie = datrie.Trie(_alphabet(words))
-#    trie = datrie.Trie(ranges = [
-#        ("'", "'"),
-#        ('A', 'z'),
-#        ('А', 'я'),
-#    ])
+    trie = datrie.Trie(ALPHABET)
 
     for word in words:
         trie[word] = 1
@@ -99,12 +96,13 @@ def benchmark():
     common_setup = """
 from __main__ import create_trie, WORDS100k, NON_WORDS100k, MIXED_WORDS100k, datrie
 from __main__ import PREFIXES_3_1k, PREFIXES_5_1k, PREFIXES_8_1k, PREFIXES_15_1k
+from __main__ import ALPHABET
 words = WORDS100k
 NON_WORDS_10k = NON_WORDS100k[:10000]
 NON_WORDS_1k = ['ыва', 'xyz', 'соы', 'Axx', 'avы']*200
 """
     dict_setup = common_setup + 'data = dict((word, 1) for word in words); empty_data=dict()'
-    trie_setup = common_setup + 'data = create_trie(); empty_data = datrie.Trie(ranges=[("\'", "\'"), ("A", "z"), ("А", "я")])'
+    trie_setup = common_setup + 'data = create_trie(); empty_data = datrie.Trie(ALPHABET)'
 
     for test_name, test, descr, op_count, repeats in tests:
         t_dict = timeit.Timer(test, dict_setup)
@@ -113,8 +111,34 @@ NON_WORDS_1k = ['ыва', 'xyz', 'соы', 'Axx', 'avы']*200
         bench('dict '+test_name, t_dict, descr, op_count, repeats)
         bench('trie '+test_name, t_trie, descr, op_count, repeats)
 
-
     # trie-specific benchmarks
+
+    bench(
+        'trie.iter_prefix_values (hits)',
+        timeit.Timer(
+            "for word in words:\n"
+            "   for it in data.iter_prefix_values(word):\n"
+            "       pass",
+            trie_setup
+        ),
+    )
+
+    bench(
+        'trie.prefix_values (hits)',
+        timeit.Timer(
+            "for word in words: data.prefix_values(word)",
+            trie_setup
+        )
+    )
+
+    bench(
+        'trie.prefix_values loop (hits)',
+        timeit.Timer(
+            "for word in words:\n"
+            "    for it in data.prefix_values(word):pass",
+            trie_setup
+        )
+    )
 
     bench(
         'trie.iter_prefix_items (hits)',
@@ -186,7 +210,7 @@ NON_WORDS_1k = ['ыва', 'xyz', 'соы', 'Axx', 'avы']*200
         )
     )
 
-    for meth in ('longest_prefix', 'longest_prefix_item'):
+    for meth in ('longest_prefix', 'longest_prefix_item', 'longest_prefix_value'):
         bench(
             'trie.%s (hits)' % meth,
             timeit.Timer(

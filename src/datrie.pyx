@@ -30,7 +30,7 @@ cdef class BaseTrie:
     """
     Wrapper for libdatrie's trie.
 
-    Keys are unicode strings, values are integers 0 <= x <= 2147483647.
+    Keys are unicode strings, values are integers -2147483648 <= x <= 2147483647.
     """
 
     cdef cdatrie.Trie *_c_trie
@@ -167,10 +167,10 @@ cdef class BaseTrie:
     def __len__(self):
         # XXX: this is very slow
         cdef BaseState s = BaseState(self)
-        cdef BaseIterator iter = BaseIterator(s)
+        cdef BaseIterator iterator = BaseIterator(s)
         cdef int counter=0
 
-        while iter.next():
+        while iterator.next():
             counter += 1
 
         return counter
@@ -234,6 +234,25 @@ cdef class BaseTrie:
         finally:
             cdatrie.trie_state_free(state)
 
+    def iter_prefix_values(self, unicode key):
+        '''
+        Returns an iterator over the values of this trie that are associated
+        with keys that are prefixes of ``key``.
+        '''
+        cdef cdatrie.TrieState* state = cdatrie.trie_root(self._c_trie)
+
+        if state == NULL:
+            raise MemoryError()
+
+        try:
+            for char in key:
+                if not cdatrie.trie_state_walk(state, <cdatrie.AlphaChar> char):
+                    return
+                if cdatrie.trie_state_is_terminal(state):
+                    yield cdatrie.trie_state_get_terminal_data(state)
+        finally:
+            cdatrie.trie_state_free(state)
+
 
     def prefixes(self, unicode key):
         '''
@@ -255,7 +274,6 @@ cdef class BaseTrie:
             return result
         finally:
             cdatrie.trie_state_free(state)
-
 
     def prefix_items(self, unicode key):
         '''
@@ -287,6 +305,30 @@ cdef class BaseTrie:
         finally:
             cdatrie.trie_state_free(state)
 
+    def prefix_values(self, unicode key):
+        '''
+        Returns a list of the values of this trie that are associated
+        with keys that are prefixes of ``key``.
+        '''
+        return self._prefix_values(key)
+
+    cdef list _prefix_values(self, unicode key):
+        cdef cdatrie.TrieState* state = cdatrie.trie_root(self._c_trie)
+
+        if state == NULL:
+            raise MemoryError()
+
+        cdef list result = []
+        try:
+            for char in key:
+                if not cdatrie.trie_state_walk(state, <cdatrie.AlphaChar> char):
+                    break
+                if cdatrie.trie_state_is_terminal(state): # word is found
+                    result.append(cdatrie.trie_state_get_terminal_data(state))
+            return result
+        finally:
+            cdatrie.trie_state_free(state)
+
 
     def longest_prefix(self, unicode key, default=RAISE_KEY_ERROR):
         """
@@ -297,25 +339,27 @@ cdef class BaseTrie:
           - otherwise raises ``KeyError``.
         """
         cdef cdatrie.TrieState* state = cdatrie.trie_root(self._c_trie)
+
         if state == NULL:
             raise MemoryError()
 
-        cdef int index = 0
+        cdef int index = 0, last_terminal_index = 0
+
         try:
-            for char in key:
-                if not cdatrie.trie_state_walk(state, <cdatrie.AlphaChar> char):
-                    if cdatrie.trie_state_is_terminal(state):
-                        return key[:index]
-                    else:
-                        if default is RAISE_KEY_ERROR:
-                            raise KeyError(key)
-                        return default
+            for ch in key:
+                if not cdatrie.trie_state_walk(state, <cdatrie.AlphaChar> ch):
+                    break
+
                 index += 1
-            if cdatrie.trie_state_is_terminal(state):
-                return key
-            if default is RAISE_KEY_ERROR:
-                raise KeyError(key)
-            return default
+                if cdatrie.trie_state_is_terminal(state):
+                    last_terminal_index = index
+
+            if not last_terminal_index:
+                if default is RAISE_KEY_ERROR:
+                    raise KeyError(key)
+                return default
+
+            return key[:last_terminal_index]
         finally:
             cdatrie.trie_state_free(state)
 
@@ -337,26 +381,68 @@ cdef class BaseTrie:
         if state == NULL:
             raise MemoryError()
 
-        cdef int index = 0
+        cdef int index = 0, last_terminal_index = 0, data
+
         try:
-            for char in key:
-                if not cdatrie.trie_state_walk(state, <cdatrie.AlphaChar> char):
-                    if cdatrie.trie_state_is_terminal(state):
-                        return key[:index], cdatrie.trie_state_get_terminal_data(state)
-                    else:
-                        if default is RAISE_KEY_ERROR:
-                            raise KeyError(key)
-                        return default
+            for ch in key:
+                if not cdatrie.trie_state_walk(state, <cdatrie.AlphaChar> ch):
+                    break
+
                 index += 1
+                if cdatrie.trie_state_is_terminal(state):
+                    last_terminal_index = index
+                    data = cdatrie.trie_state_get_terminal_data(state)
 
-            if cdatrie.trie_state_is_terminal(state):
-                return key, cdatrie.trie_state_get_terminal_data(state)
+            if not last_terminal_index:
+                if default is RAISE_KEY_ERROR:
+                    raise KeyError(key)
+                return default
 
-            if default is RAISE_KEY_ERROR:
-                raise KeyError(key)
-            return default
+            return key[:last_terminal_index], data
+
         finally:
             cdatrie.trie_state_free(state)
+
+
+    def longest_prefix_value(self, unicode key, default=RAISE_KEY_ERROR):
+        """
+        Returns the value associated with the longest key in this trie that is
+        a prefix of ``key``.
+
+        If the trie doesn't contain any prefix of ``key``:
+          - if ``default`` is given, return it
+          - otherwise raise ``KeyError``
+        """
+        return self._longest_prefix_value(key, default)
+
+    cdef _longest_prefix_value(self, unicode key, default=RAISE_KEY_ERROR):
+        cdef cdatrie.TrieState* state = cdatrie.trie_root(self._c_trie)
+
+        if state == NULL:
+            raise MemoryError()
+
+        cdef int data = 0
+        cdef char found = 0
+
+        try:
+            for ch in key:
+                if not cdatrie.trie_state_walk(state, <cdatrie.AlphaChar> ch):
+                    break
+
+                if cdatrie.trie_state_is_terminal(state):
+                    found = 1
+                    data = cdatrie.trie_state_get_terminal_data(state)
+
+            if not found:
+                if default is RAISE_KEY_ERROR:
+                    raise KeyError(key)
+                return default
+
+            return data
+
+        finally:
+            cdatrie.trie_state_free(state)
+
 
 
     def has_keys_with_prefix(self, unicode prefix):
@@ -603,6 +689,23 @@ cdef class Trie(BaseTrie):
 
         return res[0], self._values[res[1]]
 
+    def longest_prefix_value(self, unicode key, default=RAISE_KEY_ERROR):
+        """
+        Returns the value associated with the longest key in this trie that is
+        a prefix of ``key``.
+
+        If the trie doesn't contain any prefix of ``key``:
+          - if ``default`` is given, return it
+          - otherwise raise ``KeyError``
+        """
+        cdef res = self._longest_prefix_value(key, RERAISE_KEY_ERROR)
+        if res is RERAISE_KEY_ERROR: # error
+            if default is RAISE_KEY_ERROR:
+                raise KeyError(key)
+            return default
+
+        return self._values[res]
+
     def prefix_items(self, unicode key):
         '''
         Returns a list of the items (``(key,value)`` tuples)
@@ -614,6 +717,17 @@ cdef class Trie(BaseTrie):
     def iter_prefix_items(self, unicode key):
         for k, v in super(Trie, self).iter_prefix_items(key):
             yield k, self._values[v]
+
+    def prefix_values(self, unicode key):
+        '''
+        Returns a list of the values of this trie that are associated
+        with keys that are prefixes of ``key``.
+        '''
+        return [self._values[v] for v in self._prefix_values(key)]
+
+    def iter_prefix_values(self, unicode key):
+        for v in super(Trie, self).iter_prefix_values(key):
+            yield self._values[v]
 
     cdef _index_to_value(self, cdatrie.TrieData index):
         return self._values[index]
@@ -636,20 +750,17 @@ cdef class _TrieState:
     cpdef walk(self, unicode to):
         cdef bint res
         for ch in to:
-            if not self._walk(<cdatrie.AlphaChar> ch):
+            if not self.walk_char(<cdatrie.AlphaChar> ch):
                 return False
         return True
 
-    cdef bint _walk(self, cdatrie.AlphaChar char):
+    cdef bint walk_char(self, cdatrie.AlphaChar char):
         """
         Walks the trie stepwise, using a given character ``char``.
         On return, the state is updated to the new state if successfully walked.
         Returns boolean value indicating the success of the walk.
         """
         return cdatrie.trie_state_walk(self._state, char)
-
-    cpdef bint _next(self):
-        return cdatrie.trie_state_walk_next(self._state)
 
     cpdef copy_to(self, _TrieState state):
         """ Copies trie state to another """
@@ -678,7 +789,7 @@ cdef class _TrieState:
         )
 
     def __repr__(self):
-        return self.__unicode__()
+        return self.__unicode__()  # XXX: this is incorrect under Python 2.x
 
 
 cdef class BaseState(_TrieState):
@@ -720,13 +831,11 @@ cdef class _TrieIterator:
         return cdatrie.trie_iterator_next(self._iter)
 
     cpdef unicode key(self):
-        # max key length is limited!
-        DEF MAX_KEY_LENGTH = 32768
-        cdef cdatrie.AlphaChar buf[MAX_KEY_LENGTH]
-        cdef bint res = cdatrie.trie_iterator_get_key(self._iter, buf, MAX_KEY_LENGTH)
-        if not res:
-            raise MemoryError("key is too long (max allowed length = %d)" % MAX_KEY_LENGTH)
-        return unicode_from_alpha_char(buf)
+        cdef cdatrie.AlphaChar* key = cdatrie.trie_iterator_get_key(self._iter)
+        try:
+            return unicode_from_alpha_char(key)
+        finally:
+            free(key)
 
 
 cdef class BaseIterator(_TrieIterator):
@@ -901,5 +1010,4 @@ def alphabet_to_ranges(alphabet):
 def new(alphabet=None, ranges=None, AlphaMap alpha_map=None):
     warnings.warn('datrie.new is deprecated; please use datrie.Trie.', DeprecationWarning)
     return Trie(alphabet, ranges, alpha_map)
-
 
