@@ -1,9 +1,13 @@
 # -*- coding: utf-8 -*-
+
 from __future__ import absolute_import, unicode_literals
+
 import string
 import datrie
 
-WORDS = ['producers', 'pool', 'prepare', 'preview', 'prize', 'produce', 'producer', 'progress']
+WORDS = ['producers', 'pool', 'prepare', 'preview', 'prize', 'produce',
+         'producer', 'progress']
+
 
 def _trie():
     trie = datrie.Trie(ranges=[(chr(0), chr(127))])
@@ -29,6 +33,7 @@ def test_base_trie_data():
     it = datrie.BaseIterator(state)
     it.next()
     assert it.data() == 2
+
 
 def test_next():
     trie = _trie()
@@ -56,6 +61,7 @@ def test_next_non_root():
     assert len(values) == 7
     assert values == [3, 4, 5, 6, 7, 1, 8]
 
+
 def test_next_tail():
     trie = _trie()
     state = datrie.State(trie)
@@ -67,7 +73,6 @@ def test_next_tail():
         values.append(it.data())
 
     assert values == [2]
-
 
 
 def test_keys():
@@ -93,6 +98,7 @@ def test_keys_non_root():
         keys.append(it.key())
 
     assert keys == ['duce', 'ducer', 'ducers', 'gress']
+
 
 def test_keys_tail():
     trie = _trie()
